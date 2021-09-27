@@ -1,0 +1,13 @@
+{
+    "files.associations": {
+        "user.h": "c",
+        "types.h": "c",
+        "cstdio": "c",
+        "algorithm": "c",
+        "chrono": "c",
+        "limits": "c",
+        "random": "c",
+        "ratio": "c",
+        "semaphore": "c"
+    }
+}
