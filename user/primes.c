@@ -9,8 +9,8 @@
 int runner_cnt = 0;
 
 // pipe for each runner
-int pipe_r[20];
-int pipe_w[20];
+int pipe_r[5000];
+int pipe_w[5000];
 
 void runner(int id) {
 
