@@ -195,6 +195,7 @@ UPROGS=\
 	$U/_zombie\
 	$U/_sleep\
 	$U/_primes\
+	$U/_pingpong\
 	$U/_find\
 	$U/_xargs\
 
