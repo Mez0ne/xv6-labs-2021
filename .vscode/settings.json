@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "__config": "c",
+        "syscall.h": "c"
+    }
+}

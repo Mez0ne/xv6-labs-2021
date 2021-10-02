@@ -432,3 +432,53 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+// Print the contents of a page table
+int
+vmprint(pagetable_t pagetable)
+{
+  // each level's page talbe should contains (PGSIZE / 8) entries
+  const int ENTRY_CNT = PGSIZE / 8;
+
+  printf("page table %p\n",pagetable);
+
+  // iterate 3 levels page table
+  for (int l0 = 0; l0 < ENTRY_CNT; l0++){
+    // is current entry vaild?
+    if((pagetable[l0]&PTE_V) == 0)
+      continue;
+    
+    pte_t e1 = pagetable[l0];
+    pagetable_t p1 = (pagetable_t) PTE2PA(e1);
+
+    printf("..%d: pte %p pa %p\n", l0, e1, p1);
+
+    for (int l1 = 0; l1 < ENTRY_CNT; l1++){
+      // is current entry vaild?
+      if( (p1[l1]&PTE_V) == 0 )
+        continue;
+
+      pte_t e2 = p1[l1];
+      pagetable_t p2 = (pagetable_t) PTE2PA(e2);
+
+      printf(".. ..%d: pte %p pa %p\n", l1, e2, p2);
+
+      for (int l2 = 0; l2 < ENTRY_CNT; l2++){
+        // is current entry vaild?
+        if( (p2[l2] & PTE_V) == 0)
+          continue;
+
+        pte_t e3 = p2[l2];
+        // real physical address
+        uint64 pa = PTE2PA(e3);
+        
+        printf(".. .. ..%d: pte %p pa %p\n", l2, e3, pa);
+      }
+    }
+      
+  }
+  
+  return 0;
+}
+
+

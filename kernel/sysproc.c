@@ -80,7 +80,65 @@ sys_sleep(void)
 int
 sys_pgaccess(void)
 {
-  // lab pgtbl: your code here.
+  uint64 va;
+  argaddr(0, &va);
+  
+  int num = 0;
+  argint(1,&num);
+
+  if(num == 0)
+    return 0;
+
+  if(num > 0x400*8) // number too big
+    return -1; 
+  
+  char buffer[0x400]={};
+  memset(buffer, 0, 0x400);
+
+  // user address to a buffer to store the results into a bitmask
+  // bitmask: one bit per page 
+  // the first page corresponds to the least significant bit
+  uint64 output;
+  argaddr(2, &output);
+
+  // printf("pgaccess: %p, cnt:%d, dst:%p, cnt:%d\n",va, num, output, ((num-1) / 8)+1);
+  pte_t * ppte = 0;
+
+
+  pagetable_t pagetable = myproc()->pagetable;
+
+  // vmprint(pagetable);
+
+  for (int i = 0; i < num; i++)
+  {
+    ppte = walk(pagetable, va, 0);
+    int accessed = ((*ppte) & PTE_A) != 0;
+
+    // printf("va:%p, pte:%p, a:%d\n", va, *ppte, accessed);
+
+    // write to bitmask
+    int n = i/8;
+    int pos = i%8;
+    buffer[n] |= (accessed << pos);
+
+    // clear PTE_A
+    if(accessed)
+      *ppte &=  ~PTE_A;
+
+    va += 0x1000;
+  }
+
+  // printf("Result: \n");
+  // for (int i = 0; i < (num-1)/8 + 1; i++)
+  // {
+  //   printf("%x:",buffer[i]);
+  // }
+  // printf("\n");
+  
+  if(copyout(pagetable, output, buffer, ((num-1) / 8)+1)){
+    printf("pgaccess: copyout failed\n");
+    return -1;
+  }
   return 0;
 }
 #endif
