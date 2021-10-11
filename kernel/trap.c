@@ -77,8 +77,36 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if(which_dev == 2){
+
+    // handle signal alarm
+    if(p->interval!=0 && !p->handling){
+      p->ticks += 1;
+
+      // reached interval?
+      if(p->ticks == p->interval){
+        // set the flag to prevent calling handler in handler
+        p->handling = 1;
+
+        // backup the registers
+        char * p_old_reg = (char*)p->trapframe;
+        char * p_backup_reg = (char*)&p->old_reg;
+
+        for (int i = 0; i < sizeof(p->old_reg); i++)
+        {
+          p_backup_reg[i] = p_old_reg[i];
+        }
+
+        // set the pc to handler
+        p->trapframe->epc = (uint64) p->handler;
+        
+        p->ticks = 0;
+      }
+
+    }
     yield();
+  }
+    
 
   usertrapret();
 }

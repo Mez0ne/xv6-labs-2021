@@ -60,6 +60,9 @@ sys_sleep(void)
 
   if(argint(0, &n) < 0)
     return -1;
+  
+  backtrace();
+  
   acquire(&tickslock);
   ticks0 = ticks;
   while(ticks - ticks0 < n){
@@ -94,4 +97,47 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+uint64
+sys_sigalarm(void)
+{
+  int interval = 0;
+  void (*handler)();
+  handler=0;
+
+  argint(0, &interval);
+  argaddr(1, (uint64*)&handler);
+  // printf("sigalarm: interval:%d, handler:%p\n", interval, handler);
+  struct proc *p = myproc();
+
+  p->interval = interval;
+  p->handler = handler;
+  p->ticks = 0;
+
+  return 0;
+}
+
+uint64
+sys_sigreturn(void)
+{
+  // handle now
+
+  struct proc * p = myproc();
+
+  // restore the regs
+  char * p_old_reg = (char*)p->trapframe;
+  char * p_backup_reg = (char*)&p->old_reg;
+
+  for (int i = 0; i < sizeof(p->old_reg); i++)
+  {
+    p_old_reg[i] = p_backup_reg[i];
+  }
+
+  // p->trapframe->epc += 4;
+
+  p->ticks = 0;
+  p->handling = 0;
+  
+  return 0;
 }

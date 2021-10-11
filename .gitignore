@@ -22,3 +22,5 @@ xv6.out*
 submissions/
 ph
 barrier
+.vscode/c_cpp_properties.json
+.DS_Store
