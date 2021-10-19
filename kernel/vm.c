@@ -5,6 +5,7 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
 
 /*
  * the kernel's page table.
@@ -14,6 +15,9 @@ pagetable_t kernel_pagetable;
 extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
+
+// kernel physical address reference counter
+uint32 ref_count[(PHYSTOP - KERNBASE) / PGSIZE];
 
 // Make a direct-map page table for the kernel.
 pagetable_t
@@ -292,37 +296,47 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 }
 
 // Given a parent process's page table, copy
-// its memory into a child's page table.
-// Copies both the page table and the
+// it to a child's page table.
+// Copies only the page table without the
 // physical memory.
 // returns 0 on success, -1 on failure.
-// frees any allocated pages on failure.
+// not frees any allocated pages on failure.
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
+      panic("uvmcopy: pte should exist");  
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
+
+    acquire(&kref);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+
+    if((flags & PTE_W) == PTE_W){
+      // printf("uvmcopy: found a W page!\n");
+      // clear W flag, set C(OW) flag.
+      *pte &= ~PTE_W;
+      *pte |= PTE_C;
+    }
+
+    REF_COUNT(pa)++;
+    
+    if(mappages(new, i, PGSIZE, (uint64)pa, PTE_FLAGS(*pte)) != 0){
+      printf("mappage %p failed\n", i);
       goto err;
     }
+    release(&kref);
   }
   return 0;
 
  err:
+  release(&kref);
   uvmunmap(new, 0, i / PGSIZE, 1);
   return -1;
 }
@@ -351,6 +365,38 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
+    pte_t * pte = walk(pagetable, va0, 0);
+
+    // is dst a cow page?
+    acquire(&kref);
+    if((*pte & PTE_C)){
+      if(REF_COUNT(pa0) == 0 || ((*pte & PTE_W) != 0)){
+        panic("should not happen!");
+      }
+      // is this page shared?
+      if(REF_COUNT(pa0) > 1) {
+        pa0 = (uint64)kalloc();
+        if(pa0 == 0){
+          printf("copyout: out of memory\n");
+          release(&kref);
+          return -1;
+        }
+        memmove((void*)pa0, (void*)PTE2PA(*pte), PGSIZE);
+        REF_COUNT(PTE2PA(*pte))--;
+        *pte = PA2PTE(pa0) | PTE_FLAGS(*pte);
+
+      }
+      // recovery Writable flag, clear COW flag.
+      *pte &= ~PTE_C;
+      *pte |=  PTE_W;
+    }
+    release(&kref);
+    
+    if((*pte & PTE_W) == 0){
+      printf("copyout: dst not writable\n");
+      return -1;
+    }
+
     if(pa0 == 0)
       return -1;
     n = PGSIZE - (dstva - va0);

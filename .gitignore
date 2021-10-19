@@ -22,3 +22,7 @@ xv6.out*
 submissions/
 ph
 barrier
+.vscode/c_cpp_properties.json
+.gitignore
+.DS_Store
+.vscode/settings.json

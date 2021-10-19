@@ -10,11 +10,18 @@ struct spinlock tickslock;
 uint ticks;
 
 extern char trampoline[], uservec[], userret[];
+extern uint32 ref_count[];
 
 // in kernelvec.S, calls kerneltrap().
 void kernelvec();
 
 extern int devintr();
+void
+exit_now(struct proc* p)
+{
+  p->killed=1;
+  exit(-1);
+}
 
 void
 trapinit(void)
@@ -67,12 +74,66 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 0xf) {
+    // STORE pagefault
+    
+    uint64 va = r_stval();
+    pte_t *pte = walk(p->pagetable, va, 0);
+    // not a invalid page
+    if(pte == 0 || (*pte & PTE_V) != PTE_V){
+        printf("pagefault: invalid page\n");
+        exit_now(p);
+    } 
+    acquire(&kref);
+    if((*pte & PTE_W) != PTE_W) {
+      if((*pte & PTE_C) != PTE_C){
+        // this is a normal page, so AV happened.
+        printf("access violation\n");
+        release(&kref);
+        p->killed = 1;
+        exit_now(p);
+      }
+
+      // COW page!
+      if(REF_COUNT(PTE2PA(*pte)) == 0){
+        panic("should not happen!");
+      }
+
+      if(REF_COUNT(PTE2PA(*pte)) > 1) {
+        // alloc a new page
+        void * page = kalloc();
+        if(page ==0){
+          printf("recover cow page: alloc page error!\n");
+          release(&kref);
+          p->killed = 1;
+          exit_now(p);
+        }
+        
+        REF_COUNT(PTE2PA(*pte))--;
+        
+        // copy the content of page
+        memmove(page, (void*)PTE2PA(*pte), PGSIZE);
+        // set the pte with new page.
+        *pte = PA2PTE(page) | PTE_FLAGS(*pte);
+      }
+
+      // clear C flag, recover W flag.
+      *pte &= ~PTE_C;
+      *pte |=  PTE_W;
+      
+    } else {
+      printf("pagefault: unknown reason!\n");
+      release(&kref);
+      exit_now(p);
+    }
+    release(&kref);
+    
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
-    p->killed = 1;
+    exit_now(p);
   }
-
+  
   if(p->killed)
     exit(-1);
 

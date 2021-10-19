@@ -22,11 +22,19 @@ struct {
   struct spinlock lock;
   struct run *freelist;
 } kmem;
+struct spinlock kref;
 
 void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+  initlock(&kref, "kref");
+
+  for (uint64 a = (uint64)end; a < PHYSTOP; a+=PGSIZE)
+  {
+    REF_COUNT( PGROUNDDOWN(a) ) ++;
+  }
+
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -47,6 +55,17 @@ void
 kfree(void *pa)
 {
   struct run *r;
+
+  if(REF_COUNT((uint64)pa) == 0){
+    printf("double free: %p\n", pa);
+    panic("double free");
+  }
+
+  REF_COUNT((uint64)pa)--;
+
+  if(REF_COUNT((uint64)pa) > 0){
+    return;
+  }
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
@@ -75,6 +94,9 @@ kalloc(void)
   if(r)
     kmem.freelist = r->next;
   release(&kmem.lock);
+  
+  if(r)
+    REF_COUNT( ((uint64)r) )++;
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
